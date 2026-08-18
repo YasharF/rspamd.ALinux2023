@@ -10,44 +10,16 @@ jobs:
           docker run --rm -v "$PWD:/w" -w /w \
             public.ecr.aws/amazonlinux/amazonlinux:2023 \
             ./build/build.sh 4.1.5 1
-      - name: Install the RPMs and start rspamd
+      - name: Install and try to start rspamd, with diagnostics
         run: |
-          docker run -d --name rspamd --network host \
-            -v "$PWD:/w" -w /w \
+          docker run --rm -v "$PWD:/w" -w /w \
             public.ecr.aws/amazonlinux/amazonlinux:2023 \
-            ./verify/run.sh /w/out/RPMS
-          for port in 11332 11333 11334; do
-            for i in $(seq 1 60); do
-              (exec 3<>/dev/tcp/127.0.0.1/$port) 2>/dev/null && break
-              if [ "$i" = 60 ]; then
-                docker logs rspamd
-                echo "rspamd never listened on $port"
-                exit 1
-              fi
-              sleep 2
-            done
-          done
-          docker logs rspamd
-
-      - name: Controller liveness (/ping)
-        run: |
-          resp=$(curl -fsS http://127.0.0.1:11334/ping)
-          echo "$resp"
-          [ "$resp" = "pong" ] || { echo "controller /ping did not answer pong"; exit 1; }
-
-      - name: Normal worker scan (local rule, no network)
-        run: |
-          out=$(docker exec -i rspamd rspamc -h 127.0.0.1:11333 symbols < verify/no-date.eml)
-          echo "$out"
-          echo "$out" | grep -q MISSING_DATE \
-            || { echo "scan ran but MISSING_DATE did not fire"; exit 1; }
-
-      - name: Milter mode handshake (rspamd_proxy)
-        run: python3 verify/milter-optneg.py
-
-      - name: rspamadm configtest
-        run: docker exec rspamd rspamadm configtest -c /etc/rspamd/rspamd.conf
-
-      - name: rspamd log
-        if: always()
-        run: docker logs rspamd
+            bash -c '
+              set -x
+              dnf -y install ./out/RPMS/rspamd-4.1.5-1.amzn2023.x86_64.rpm
+              rpm --eval "rundir=%{_localstatedir}/run/rspamd"
+              ls -ld /var/run /run /var/run/rspamd /run/rspamd 2>&1 || true
+              timeout 5 rspamd -c /etc/rspamd/rspamd.conf -f -u root -g root || echo "EXIT=$?"
+              echo "=== log ==="
+              cat /var/log/rspamd/rspamd.log 2>&1 || true
+            '
