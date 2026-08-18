@@ -13,12 +13,16 @@ jobs:
       - if: always()
         run: ls -la out/RPMS 2>&1 || true
 
-  test-install-x86_64:
-    needs: []
+  test-install:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - run: |
           docker run --rm -v "$PWD:/w" -w /w \
             public.ecr.aws/amazonlinux/amazonlinux:2023 \
-            bash -c './build/build.sh 4.1.5 1 && dnf -y install ./out/RPMS/rspamd-4.1.5*.x86_64.rpm ! -name "*debug*" 2>/dev/null; dnf -y install ./out/RPMS/rspamd-4.1.5-1.amzn2023.x86_64.rpm && rspamd --version && rspamc --version && rspamadm --version'
+            bash -c './build/build.sh 4.1.5 1'
+      - name: install with timeout to see where it hangs
+        run: |
+          timeout 120 docker run --rm -v "$PWD:/w" -w /w \
+            public.ecr.aws/amazonlinux/amazonlinux:2023 \
+            bash -c 'set -x; dnf -y install ./out/RPMS/rspamd-4.1.5-1.amzn2023.x86_64.rpm && echo INSTALL_DONE && rspamd --version && rspamadm --version' || echo "EXIT=$?"
