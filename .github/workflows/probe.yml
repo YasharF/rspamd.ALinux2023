@@ -17,9 +17,16 @@ jobs:
             bash -c '
               set -x
               dnf -y install ./out/RPMS/rspamd-4.1.5-1.amzn2023.x86_64.rpm
-              rpm --eval "rundir=%{_localstatedir}/run/rspamd"
-              ls -ld /var/run /run /var/run/rspamd /run/rspamd 2>&1 || true
-              timeout 5 rspamd -c /etc/rspamd/rspamd.conf -f -u root -g root || echo "EXIT=$?"
-              echo "=== log ==="
-              cat /var/log/rspamd/rspamd.log 2>&1 || true
+              rspamd -c /etc/rspamd/rspamd.conf -f -u root -g root &
+              RPID=$!
+              for i in $(seq 1 30); do
+                (exec 3<>/dev/tcp/127.0.0.1/11333) 2>/dev/null && { echo "LISTENING after ${i}s"; break; }
+                sleep 1
+              done
+              (exec 3<>/dev/tcp/127.0.0.1/11333) 2>/dev/null && echo "PORT_OPEN" || echo "PORT_STILL_CLOSED"
+              ls -ld /run/rspamd 2>&1 || true
+              ps aux | grep rspamd
+              echo "=== log tail ==="
+              tail -n 40 /var/log/rspamd/rspamd.log
+              kill $RPID 2>/dev/null || true
             '
