@@ -1,0 +1,15 @@
+name: Probe
+on:
+  workflow_dispatch:
+jobs:
+  test-published-install:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: |
+          docker run --rm public.ecr.aws/amazonlinux/amazonlinux:2023 bash -c '
+            set -x
+            curl -fsSLo /etc/yum.repos.d/rspamd-al2023.repo https://yasharf.github.io/rspamd.ALinux2023/rspamd-al2023.repo
+            dnf install -y rspamd
+            rspamd --version
+            dnf list --showduplicates rspamd
+          '
