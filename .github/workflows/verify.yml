@@ -1,0 +1,137 @@
+name: Verify
+# Installs the RPMs a Build run produced and does basic checks to verify they work
+
+on:
+  workflow_run:
+    workflows: [Build]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Build run ID whose RPMs to test'
+        required: true
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  # Build's own resolve job can succeed with its build job skipped (Watch
+  # found nothing new), so this checks for rpms-* artifacts rather than
+  # trusting Build's conclusion alone.
+  resolve:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    outputs:
+      run_id: ${{ steps.resolve.outputs.run_id }}
+      proceed: ${{ steps.resolve.outputs.proceed }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - id: resolve
+        run: |
+          if [ "${{ github.event_name }}" = 'workflow_dispatch' ]; then
+            run_id='${{ inputs.run_id }}'
+          else
+            run_id='${{ github.event.workflow_run.id }}'
+          fi
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          n=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/artifacts" \
+                --jq '[.artifacts[].name | select(startswith("rpms-"))] | length')
+          if [ "$n" -gt 0 ]; then
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Build run $run_id produced no rpms-* artifacts to verify"
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  verify:
+    needs: resolve
+    if: needs.resolve.outputs.proceed == 'true'
+    # Both matrix legs resolve the same Build run; the signal job needs it.
+    outputs:
+      run_id: ${{ needs.resolve.outputs.run_id }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: rpms-${{ matrix.arch }}
+          path: rpms
+          run-id: ${{ needs.resolve.outputs.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Install the RPMs and start rspamd
+        run: |
+          docker run -d --name rspamd --network host \
+            -v "$PWD:/w" -w /w \
+            public.ecr.aws/amazonlinux/amazonlinux:2023 \
+            ./verify/run.sh /w/rpms
+          for port in 11332 11333 11334; do
+            for i in $(seq 1 60); do
+              (exec 3<>/dev/tcp/127.0.0.1/$port) 2>/dev/null && break
+              if [ "$i" = 60 ]; then
+                docker logs rspamd
+                echo "rspamd never listened on $port"
+                exit 1
+              fi
+              sleep 2
+            done
+          done
+          docker logs rspamd
+
+      - name: Controller liveness (/ping)
+        run: |
+          resp=$(curl -fsS http://127.0.0.1:11334/ping)
+          echo "$resp"
+          [ "$resp" = "pong" ] || { echo "controller /ping did not answer pong"; exit 1; }
+
+      # rspamadm, rspamc and the normal worker's scan pipeline, exercised
+      # together: MISSING_DATE is a purely local rule (no DNS, no maps), the
+      # rspamd equivalent of a SpamAssassin GTUBE probe -- see verify/no-date.eml.
+      - name: Normal worker scan (local rule, no network)
+        run: |
+          out=$(docker exec -i rspamd rspamc -h 127.0.0.1:11333 symbols < verify/no-date.eml)
+          echo "$out"
+          echo "$out" | grep -q MISSING_DATE \
+            || { echo "scan ran but MISSING_DATE did not fire"; exit 1; }
+
+      # The milter worker (rspamd_proxy) is what this package needs for
+      # Postfix milter deployments -- see README's "Milter mode" section.
+      # Speaks just the option-negotiation handshake every milter client
+      # sends first.
+      - name: Milter mode handshake (rspamd_proxy)
+        run: python3 verify/milter-optneg.py
+
+      - name: rspamadm configtest
+        run: docker exec rspamd rspamadm configtest -c /etc/rspamd/rspamd.conf
+
+      - name: rspamd log
+        if: always()
+        run: docker logs rspamd
+
+  # `needs` waits for both architectures, so nothing is signalled unless both
+  # verified. Publish is add-only and skips filenames already there, so a
+  # re-run against an already-published build is a no-op rather than
+  # something to guard against.
+  signal:
+    needs: verify
+    runs-on: ubuntu-24.04
+    steps:
+      - run: |
+          echo "run_id=${{ needs.verify.outputs.run_id }}" >> verified-build.env
+          cat verified-build.env
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: verified-build
+          path: verified-build.env

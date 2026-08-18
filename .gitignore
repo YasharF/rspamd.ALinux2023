@@ -1,0 +1,6 @@
+# Build output: RPMs.
+/out/
+
+# Other potential dev artifacts
+__pycache__/
+*.pyc

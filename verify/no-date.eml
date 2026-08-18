@@ -1,0 +1,9 @@
+From: sender@example.com
+To: test@example.com
+Subject: rspamd verify: local rule check
+Message-ID: <verify-no-date@example.com>
+Content-Type: text/plain
+
+This message has no Date header on purpose, so a purely local rspamd rule
+(MISSING_DATE) fires without needing any network access -- the rspamd
+equivalent of a SpamAssassin GTUBE probe. See verify/run.sh.

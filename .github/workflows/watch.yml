@@ -1,0 +1,91 @@
+name: Watch
+# Checks rspamd's GitHub releases for a version this repository has not
+# published yet, and leaves a marker for Build to pick up when it finds one.
+# Build, Verify, and Publish each listen for the previous workflow's completion
+# rather than being dispatched, so an upstream release reaches the dnf
+# repository, and from there a consumer's `dnf upgrade`, with nobody touching it.
+#
+# rspamd.com publishes only binary RPMs, not SRPMs (see README), so "new"
+# means "the GitHub release tag rspamd.com's own EL9 RPMs are built from is
+# not in the published repository yet" rather than tracking rspamd.com
+# directly.
+
+on:
+  schedule:
+    # Daily. rspamd releases every few weeks, so this is about bounding how
+    # long a release sits unnoticed, not about catching it quickly.
+    - cron: '23 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+
+jobs:
+  watch:
+    runs-on: ubuntu-24.04
+    steps:
+      # A Build takes well under an hour and Verify another few minutes, so a
+      # daily schedule cannot collide with itself. A manual run during a
+      # build can, and would start a second build of the same release.
+      - name: Skip if a Build is already running
+        id: inflight
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          n=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow=build.yml \
+                --status=in_progress --json databaseId --jq 'length')
+          q=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow=build.yml \
+                --status=queued --json databaseId --jq 'length')
+          if [ "$((n + q))" -gt 0 ]; then
+            echo "a Build is already in flight; nothing to do"
+            echo "busy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "busy=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Newest upstream release
+        id: upstream
+        if: steps.inflight.outputs.busy == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          v=$(gh api repos/rspamd/rspamd/releases/latest --jq .tag_name)
+          [ -n "$v" ] || { echo "no rspamd release found"; exit 1; }
+          echo "upstream release: $v"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      # The gh-pages branch rather than the Pages URL: the branch is what a
+      # publish writes and is true the moment it lands, where the served site
+      # sits behind a CDN and can lag.
+      - name: Skip if it is already published
+        id: published
+        if: steps.inflight.outputs.busy == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ steps.upstream.outputs.version }}
+        run: |
+          if gh api "repos/$GITHUB_REPOSITORY/contents/al2023/x86_64/rspamd-$V-1.amzn2023.x86_64.rpm?ref=gh-pages" \
+               --silent >/dev/null 2>&1; then
+            echo "$V is already in the published repository"
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "$V is not published yet"
+            echo "new=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Build listens for this workflow's completion instead of being
+      # dispatched: a run started by GITHUB_TOKEN can't itself trigger another
+      # workflow's on.workflow_run listener.
+      - name: Leave a marker for Build
+        if: steps.inflight.outputs.busy == 'false' && steps.published.outputs.new == 'true'
+        run: |
+          echo "version=${{ steps.upstream.outputs.version }}" >> new-release.env
+          echo "release=1" >> new-release.env
+          cat new-release.env
+
+      - uses: actions/upload-artifact@v7
+        if: steps.inflight.outputs.busy == 'false' && steps.published.outputs.new == 'true'
+        with:
+          name: new-release
+          path: new-release.env
