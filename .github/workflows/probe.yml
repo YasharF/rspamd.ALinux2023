@@ -2,20 +2,13 @@ name: Probe
 on:
   workflow_dispatch:
 jobs:
-  probe3:
+  test-build-x86_64:
     runs-on: ubuntu-24.04
     steps:
+      - uses: actions/checkout@v7
       - run: |
-          docker run --rm public.ecr.aws/amazonlinux/amazonlinux:2023 bash -c '
-            set -x
-            dnf -y -q install cmake cmake-filesystem >/dev/null
-            rpm -ql cmake-filesystem
-            rpm -ql cmake | grep -iE "macro|rpm"
-            echo "=== eval cmake macro ==="
-            rpm --eval "%{?cmake}"
-            echo "=== optflags ==="
-            rpm --eval "%{optflags}"
-            echo "=== presetdir ==="
-            dnf -y -q install systemd-rpm-macros >/dev/null
-            rpm --eval "%{_presetdir}"
-          '
+          docker run --rm -v "$PWD:/w" -w /w \
+            public.ecr.aws/amazonlinux/amazonlinux:2023 \
+            ./build/build.sh 4.1.5 1
+      - if: always()
+        run: ls -la out/RPMS 2>&1 || true
