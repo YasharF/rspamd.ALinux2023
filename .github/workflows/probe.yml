@@ -33,3 +33,13 @@ jobs:
               dnf -q repoquery --qf "%{name}-%{version}-%{release}.%{arch}" "$pkg" 2>&1 | head -5
             done
           '
+
+  probe-macros:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: |
+          docker run --rm public.ecr.aws/amazonlinux/amazonlinux:2023 bash -c '
+            rpm --eval "dist=%{dist} el7=%{?el7} el8=%{?el8} el9=%{?el9} el10=%{?el10} fedora=%{?fedora} amzn=%{?amzn} amzn2023=%{?amzn2023}"
+            cat /etc/os-release
+            rpm -E "%{_arch}"
+          '
