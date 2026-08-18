@@ -91,7 +91,9 @@ jobs:
 
       - name: Controller liveness (/ping)
         run: |
-          resp=$(curl -fsS http://127.0.0.1:11334/ping)
+          # tr -d '\r': /ping's body is "pong" CRLF; $() only strips the
+          # trailing \n, so an exact match against "pong" needs the \r gone too.
+          resp=$(curl -fsS http://127.0.0.1:11334/ping | tr -d '\r')
           echo "$resp"
           [ "$resp" = "pong" ] || { echo "controller /ping did not answer pong"; exit 1; }
 

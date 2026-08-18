@@ -31,7 +31,7 @@ jobs:
 
       - name: Controller liveness (/ping)
         run: |
-          resp=$(curl -fsS http://127.0.0.1:11334/ping)
+          resp=$(curl -fsS http://127.0.0.1:11334/ping | tr -d '\r')
           echo "$resp"
           [ "$resp" = "pong" ] || { echo "controller /ping did not answer pong"; exit 1; }
 
