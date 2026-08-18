@@ -20,4 +20,12 @@ dnf -y install "$RPMS"/*.rpm
 
 rspamadm configtest -c /etc/rspamd/rspamd.conf
 
-exec rspamd -c /etc/rspamd/rspamd.conf -f
+# Unlike a typical daemon, rspamd won't drop root privileges on its own: run
+# as root with no -u/-g and it refuses outright ("cannot run rspamd workers
+# as root user"). Its systemd unit works because systemd itself starts the
+# process as User=_rspamd, never as root; -u/-g here gets the same result
+# without systemd. RSPAMD_LOG_TYPE=console (same as the project's own
+# rspamd-docker image) sends the log to this container's stdout instead of
+# /var/log/rspamd/rspamd.log, so `docker logs` shows it.
+export RSPAMD_LOG_TYPE=console
+exec rspamd -c /etc/rspamd/rspamd.conf -f -u _rspamd -g _rspamd
