@@ -1,0 +1,35 @@
+name: Probe
+# Scratch workflow used only while developing build.sh, to check what package
+# names AL2023's repos actually carry. Deleted once the build works.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - run: |
+          docker run --rm public.ecr.aws/amazonlinux/amazonlinux:2023 bash -c '
+            set -x
+            dnf -y -q install "dnf-command(repoquery)" >/dev/null
+            for pkg in cmake gcc gcc-c++ gcc-toolset-12-gcc-c++ gcc-toolset-12-binutils-devel \
+                       gcc-toolset-12-libasan-devel gcc-toolset-12-gcc-plugin-annobin \
+                       file-devel glib2-devel lapack-devel libicu-devel libsodium-devel \
+                       libunwind-devel hyperscan-devel jemalloc-devel lua-devel lua \
+                       openblas-devel openssl-devel pcre2-devel ragel sqlite-devel systemd \
+                       systemd-devel binutils-devel git wget tar gzip patch make rpm-build \
+                       boost-devel python3-devel clang clang-devel llvm-devel libarchive-devel \
+                       zlib-devel perl blas blas-devel epel-release; do
+              echo "=== $pkg ==="
+              dnf -q repoquery --qf "%{name}-%{version}-%{release}.%{arch}" "$pkg" 2>&1 | head -5
+            done
+          '
