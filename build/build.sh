@@ -29,6 +29,19 @@ dnf -y install rpm-build 'dnf-command(builddep)' \
 rm -rf "$WORK"
 mkdir -p "$TOP"/SPECS "$TOP"/SOURCES "$TOP"/BUILD "$TOP"/RPMS "$TOP"/SRPMS "$TOP"/BUILDROOT
 
+# AL2023 carries no ragel package at all (it's a build-only tool rspamd -- and
+# vectorscan, below -- use to generate tokenizer/parser code, not a library
+# dependency). The vendor's own build container doesn't rely on its host
+# distro for this either -- it builds ragel 6.10 from source the same way, on
+# every platform. Built first: vectorscan's own CMake configure step requires
+# it on PATH.
+rm -rf /ragel-6.10 /ragel-6.10.tar.gz
+curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors \
+    -o /ragel-6.10.tar.gz https://www.colm.net/files/ragel/ragel-6.10.tar.gz
+tar xf /ragel-6.10.tar.gz -C /
+(cd /ragel-6.10 && ./configure --prefix=/usr && make -j"$(nproc)" && make install)
+rm -rf /ragel-6.10 /ragel-6.10.tar.gz
+
 # AL2023 ships hyperscan-devel for neither architecture (see README). The
 # vendor's own EL9 build container already builds vectorscan -- a drop-in,
 # actively-maintained hyperscan fork -- from source for aarch64, since real
@@ -58,17 +71,6 @@ make -C /fasttext-src/build install
 mv -f /fasttext/lib/libfasttext_pic.a /fasttext/lib/libfasttext.a
 rm -f /fasttext/lib/*.so
 rm -rf /fasttext-src
-
-# AL2023 carries no ragel package at all (it's a build-only tool rspamd uses
-# to generate tokenizer/parser code, not a library dependency). The vendor's
-# own build container doesn't rely on its host distro for this either -- it
-# builds ragel 6.10 from source the same way, on every platform.
-rm -rf /ragel-6.10 /ragel-6.10.tar.gz
-curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors \
-    -o /ragel-6.10.tar.gz https://www.colm.net/files/ragel/ragel-6.10.tar.gz
-tar xf /ragel-6.10.tar.gz -C /
-(cd /ragel-6.10 && ./configure --prefix=/usr && make -j"$(nproc)" && make install)
-rm -rf /ragel-6.10 /ragel-6.10.tar.gz
 
 # LuaJIT, matching the vendor's own official rspamd.com builds (LUAJIT=1),
 # built from source rather than linked against AL2023's system Lua.
