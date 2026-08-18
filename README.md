@@ -46,6 +46,8 @@ rspamd.com's `centos-9` repository (the vendor's own EL9 build, the same OS fami
 
 [`verify/run.sh`](verify/run.sh) installs the built RPMs on a clean AL2023 host and starts rspamd in the foreground for `verify.yml` to test.
 
+Unlike a typical daemon, rspamd won't drop root privileges on its own: started as root with no `-u`/`-g`, it refuses outright (`cannot run rspamd workers as root user`). Its systemd unit works because systemd itself starts the process as `User=_rspamd`, never as root; outside systemd, `-u _rspamd -g _rspamd` gets the same result. `verify/run.sh` also sets `RSPAMD_LOG_TYPE=console` (matching the project's own `rspamd-docker` image) so the log goes to this container's stdout, where `docker logs` and `verify.yml`'s failure diagnostics can see it, instead of `/var/log/rspamd/rspamd.log`.
+
 ### Changes to RHEL Spec
 
 rspamd's own EL9 build container (`rspamd/rspamd-build-docker`, `centos-9/Dockerfile`) already builds several of its dependencies from source rather than relying on the target distro for them -- ragel, LuaJIT, fastText, and (on aarch64) vectorscan, a hyperscan-compatible fork. This repo's `build/build.sh` does the same, on both architectures, matching that recipe. What's specific to AL2023 is smaller:
