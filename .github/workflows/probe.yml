@@ -2,8 +2,8 @@ name: Probe
 on:
   workflow_dispatch:
 jobs:
-  test-build-x86_64:
-    runs-on: ubuntu-24.04
+  test-build-aarch64:
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v7
       - run: |
@@ -12,3 +12,13 @@ jobs:
             ./build/build.sh 4.1.5 1
       - if: always()
         run: ls -la out/RPMS 2>&1 || true
+
+  test-install-x86_64:
+    needs: []
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - run: |
+          docker run --rm -v "$PWD:/w" -w /w \
+            public.ecr.aws/amazonlinux/amazonlinux:2023 \
+            bash -c './build/build.sh 4.1.5 1 && dnf -y install ./out/RPMS/rspamd-4.1.5*.x86_64.rpm ! -name "*debug*" 2>/dev/null; dnf -y install ./out/RPMS/rspamd-4.1.5-1.amzn2023.x86_64.rpm && rspamd --version && rspamc --version && rspamadm --version'
