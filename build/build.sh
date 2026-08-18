@@ -22,9 +22,14 @@ WORK=${RSPAMD_BUILD_WORK:-/var/tmp/rspamd-build}
 TOP=$WORK/rpmbuild
 
 # No curl here: AL2023 ships curl-minimal, and asking for curl conflicts with it.
+#
+# libarchive-devel: CMakeLists.txt requires it unconditionally, but the
+# upstream spec's BuildRequires never lists it -- their own build container
+# gets it for free as part of its base image. Added explicitly here since it
+# isn't implied by anything else on a plain AL2023 image.
 dnf -y install rpm-build 'dnf-command(builddep)' \
     gcc gcc-c++ cmake make git patch findutils tar gzip which diffutils \
-    systemd-rpm-macros boost-devel python3-devel
+    systemd-rpm-macros boost-devel python3-devel libarchive-devel
 
 rm -rf "$WORK"
 mkdir -p "$TOP"/SPECS "$TOP"/SOURCES "$TOP"/BUILD "$TOP"/RPMS "$TOP"/SRPMS "$TOP"/BUILDROOT
