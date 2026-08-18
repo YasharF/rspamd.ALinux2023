@@ -6,40 +6,24 @@ on:
   workflow_dispatch:
 
 jobs:
-  probe:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: x86_64
-            runner: ubuntu-24.04
-          - arch: aarch64
-            runner: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runner }}
+  probe2:
+    runs-on: ubuntu-24.04
     steps:
       - run: |
           docker run --rm public.ecr.aws/amazonlinux/amazonlinux:2023 bash -c '
             set -x
             dnf -y -q install "dnf-command(repoquery)" >/dev/null
-            for pkg in cmake gcc gcc-c++ gcc-toolset-12-gcc-c++ gcc-toolset-12-binutils-devel \
-                       gcc-toolset-12-libasan-devel gcc-toolset-12-gcc-plugin-annobin \
-                       file-devel glib2-devel lapack-devel libicu-devel libsodium-devel \
-                       libunwind-devel hyperscan-devel jemalloc-devel lua-devel lua \
-                       openblas-devel openssl-devel pcre2-devel ragel sqlite-devel systemd \
-                       systemd-devel binutils-devel git wget tar gzip patch make rpm-build \
-                       boost-devel python3-devel clang clang-devel llvm-devel libarchive-devel \
-                       zlib-devel perl blas blas-devel epel-release; do
+            for pkg in systemd-rpm-macros redhat-rpm-config cmake-filesystem findutils \
+                       diffutils which curl-minimal; do
               echo "=== $pkg ==="
-              dnf -q repoquery --qf "%{name}-%{version}-%{release}.%{arch}" "$pkg" 2>&1 | head -5
+              dnf -q repoquery --qf "%{name}-%{version}-%{release}.%{arch}" "$pkg" 2>&1 | head -3
             done
-          '
-
-  probe-macros:
-    runs-on: ubuntu-24.04
-    steps:
-      - run: |
-          docker run --rm public.ecr.aws/amazonlinux/amazonlinux:2023 bash -c '
-            rpm --eval "dist=%{dist} el7=%{?el7} el8=%{?el8} el9=%{?el9} el10=%{?el10} fedora=%{?fedora} amzn=%{?amzn} amzn2023=%{?amzn2023}"
-            cat /etc/os-release
-            rpm -E "%{_arch}"
+            echo "=== cmake macro file ==="
+            dnf -y -q install cmake >/dev/null
+            rpm -ql cmake | grep -i macro
+            echo "=== gcc version / cxx20 test ==="
+            dnf -y -q install gcc-c++ >/dev/null
+            g++ --version | head -1
+            echo "int main(){ auto x = 1; return 0; }" > /tmp/t.cc
+            g++ -std=c++20 -c /tmp/t.cc -o /tmp/t.o && echo "c++20 OK"
           '
